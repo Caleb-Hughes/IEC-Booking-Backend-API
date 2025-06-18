@@ -20,7 +20,9 @@ const logger = require('morgan');
 const indexRouter = require('./routes/index');
 const usersRouter = require('./routes/users');
 const authRouter = require('./routes/auth');
-//const appointmentsRouter = require('./routes/appointments');
+const profileRouter = require('./routes/profile');
+const serviceRouter = require('./routes/services');
+const appointmentsRouter = require('./routes/appointments');
 
 const app = express();
 
@@ -33,5 +35,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/profile', profileRouter);
+app.use('/api/services', serviceRouter);
+app.use('/api/appointments', appointmentsRouter);
 
 module.exports = app;

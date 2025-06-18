@@ -1,19 +1,33 @@
-const jwt = require('jsonwebtoken'); // Importing jsobwebtoken library
+const jwt = require('jsonwebtoken'); // Importing jsonwebtoken library
 
 function verifyToken(req, res, next) {
-    const authHeader = req.headers.authorization; //retrieving authorization header from request
+    const authHeader = req.headers.authorization; // Retrieving authorization header
 
-    if (!authHeader || !authHeader.startswith('Bearer ')) {
-        return res.status(401).json({message: 'Unauthorized: No token provided'});
+    // Check if token is missing or not formatted correctly
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: 'Unauthorized: No token provided' });
     }
-    const token = authHeader.split(' ')[1];
+
+    const token = authHeader.split(' ')[1]; // Extract token after "Bearer"
 
     try {
-        const decoded = jwt.verify(token, process.env.SECRET);
-        req.user = decoded;
-        next();
+        // Verify the token
+        const decoded = jwt.verify(token, process.env.JWT_SECRET); // Make sure to use JWT_SECRET, not SECRET
+        req.user = decoded; // Attach decoded user info to request object
+        next(); // Proceed to next middleware or route
     } catch (error) {
-        return res.status(401).json({message: 'Unauthorized: Invalid token'});
+        return res.status(401).json({ message: 'Unauthorized: Invalid token' });
     }
 }
-module.exports = verifyToken;
+function isAdmin(req, res, next) {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        return res.status(403).json({ message: 'Access denied: Admin only' });
+    }
+}
+
+module.exports = {
+    verifyToken,
+    isAdmin,
+};

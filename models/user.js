@@ -6,6 +6,8 @@ const userSchema = new mongoose.Schema ({
     password: {type: String, required: true},
     email: {type: String, unique: true, required: true},
     role: {type: String, enum: ['client', 'stylist', 'admin'], default: 'client'},
-})
+    googleId: {type: String, unique: true, sparse: true},
+    services: [{type: mongoose.Schema.Types.ObjectId, ref: 'Service'}]
+});
 const User = mongoose.model('User', userSchema); //creating class to be used
 module.exports = User;
