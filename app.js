@@ -23,6 +23,7 @@ const authRouter = require('./routes/auth');
 const profileRouter = require('./routes/profile');
 const serviceRouter = require('./routes/services');
 const appointmentsRouter = require('./routes/appointments');
+const stylistRoutes = require('./routes/stylists');
 
 const app = express();
 
@@ -38,5 +39,6 @@ app.use('/api/auth', authRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/services', serviceRouter);
 app.use('/api/appointments', appointmentsRouter);
+app.use('api/stylists', stylistRoutes);
 
 module.exports = app;

@@ -34,7 +34,7 @@ router.post(
             res.status(201).json({message: 'Appointment created', appointment: newAppointment});
         } catch (error) {
             console.log(error);
-            res.status(500).json({message: 'Internal server error while createing appointment', error});
+            res.status(500).json({message: 'Internal server error while creating appointment', error});
         }
     });
 
@@ -49,10 +49,26 @@ router.get('/', verifyToken, isAdmin, async (req, res) => {
         res.status(500).json({message: 'Internal server error while getting appointments', error});
     }
 });
+//router to get all appointments for currently logged-in user with filtering
 router.get('/user', verifyToken, async (req, res) => {
+
+    const {filter} = req.query; //pulling filter constant from request query
+    const query = {user: req.user.id}; //Initializing query to only return appointments belonging to logged-in user
+
+    const today = new Date(); //creating object that will reflect the current date
+    today.setHours(0, 0, 0, 0); //Setting time to zero to only focus on date
+
+    //if filter set to past only return appointments before current date
+    if (filter === 'past') {
+        query.date = {$lt: today};
+    }
+    //if filter set to future return appointments after current date
+    else if (filter === 'future') {
+        query.date = {$gte: today};
+    }
     try {
         //finding all appointments linked to specific user
-        const appointments = await Appointment.find({ user: req.user.id}).populate('service');
+        const appointments = await Appointment.find(query).populate('service').sort({date: 1});
         res.status(200).json(appointments);
     } catch (error) {
         console.error(error);
@@ -96,6 +112,47 @@ router.put(
             res.status(500).json({message: 'Server error while updating appointment'});
         }
     });
+//route to accept and deny appointments
+router.put('/id/status', verifyToken, async(req, res) => {
+    const {status} = req.body; //pulling status from request body
+
+    //Checking if status value is valid
+    if (!['accepted', 'declined'].includes(status)) {
+        return res.status(400).json({message: 'Invalid'});
+    }
+
+    try {
+        //finding appointment by ID
+        const appointment = await Appointment.findById(req.params.id);
+
+        if (!appointment) { //error handler for if appointment doesn't exist
+            return res.status(403).json({message: 'Unauthorized to update this appointment'});
+        }
+        //checking credentials to ensure that only admin and stylists can approve and deny appointments
+        if (req.user.role !== 'admin' && req.user.role !== 'stylist') {
+            return res.status(403).json({message: 'Unauthorized to update this appointment'});
+        }
+        //checking to see if appointment time is already booked
+        if (status === 'accepted') {
+            const conflict = await Appointment.findOne({
+                _id: {$ne: appointment._id}, //excluding current appointments from search
+                date: appointment.date, //checking for same date and time
+                status: 'accepted' //only checking through other accepted appointments
+            });
+            //if time conflict found return error
+            if (conflict) {
+                return res.status(409).json({message: 'Time slot already booked'});
+            }
+        }
+        appointment.status = status;
+        await appointment.save(); //saving appointment to database
+        res.status(200).json({message: `Appointment ${status}`, appointment});
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({message: 'Server error while updating appointment'});
+    }
+})
 
 router.delete('/:id', verifyToken, async (req, res) => {
     try {
@@ -111,7 +168,7 @@ router.delete('/:id', verifyToken, async (req, res) => {
         await Appointment.findByIdAndDelete(req.params.id); //deleting appointment
         res.status(200).json({message: 'Appointment deleted successfully'});
     } catch (error) {
-        res.status(500).json({message: 'Server error while deleting appointtment'});
+        res.status(500).json({message: 'Server error while deleting appointment'});
     }
 });
 module.exports = router; //exporting router

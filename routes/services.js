@@ -11,9 +11,15 @@ router.post(
     verifyToken,
     isAdmin,
     [
-        body('name').notEmpty().withMessage('Service name is required'),
-        body('duration').isNumeric().withMessage('Duration must be a number'),
-        body('price').isNumeric().withMessage('Price must be a number'),
+        body('name')
+            .notEmpty()
+            .withMessage('Service name is required'),
+        body('duration')
+            .isInt({min: 15})
+            .withMessage('Duration must be at least fifteen minutes'),
+        body('price')
+            .isFloat({gt: 0})
+            .withMessage('Price must be a positive number')
     ],
     async (req, res) => {
         const errors = validationResult(req);
@@ -23,11 +29,6 @@ router.post(
         try {
             // Destructure service details from request body
             const { name, duration, price } = req.body;
-
-            // Validate required fields
-            if (!name || !duration || !price) {
-                return res.status(400).json({ message: 'All fields (name, duration, price) are required' });
-            }
 
             // Create new service document and save it to the database
             const newService = new Service({ name, duration, price });
@@ -43,8 +44,7 @@ router.post(
     });
 router.get('/', async (req, res) => {
     try {
-        const services = await
-        Service.find();
+        const services = await Service.find();
         res.status(200).json(services);
     }
     catch (error) {
@@ -52,7 +52,24 @@ router.get('/', async (req, res) => {
         res.status(500).json({ message: 'Server error while getting service' });
     }
 });
-router.put('/:id', verifyToken, isAdmin, async (req, res) => {
+router.put(
+    '/:id',
+    verifyToken,
+    isAdmin,
+    [
+        body('name')
+            .optional()
+            .notEmpty()
+            .withMessage('Service name is required'),
+        body('duration')
+            .optional()
+            .isInt({min: 15})
+            .withMessage('Duration must be at least fifteen minutes'),
+        body('price')
+            .optional()
+            .isFloat({gt: 0})
+            .withMessage('Price must be a positive number')
+    ],async (req, res) => {
     try {
         const {name, duration, price} = req.body;
 
@@ -70,6 +87,7 @@ router.put('/:id', verifyToken, isAdmin, async (req, res) => {
         res.status(500).json({ message: 'Server error while updating service' });
     }
 });
+
 
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
