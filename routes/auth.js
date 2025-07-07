@@ -5,13 +5,15 @@ const jwt = require('jsonwebtoken'); // Importing jwt for token creation
 const {body, validationResult} = require('express-validator');
 const User = require('../models/user');
 const {verifyToken} = require('../middleware/authMiddleware');
+const crypto = require('crypto');
+const sendEmail = require('../utils/sendEmail');
 
 
 //post route for registration
 router.post('/register',
     [
         body('name').notEmpty().withMessage('Name is required'),
-        body('email').isEmail().withMessage('Email is required'),
+        body('email').isEmail().withMessage('Valid email is required'),
         body('password').isLength({min: 6}).withMessage('Password must be at least 6 characters'),
     ],
     async (req, res) => {
@@ -28,14 +30,28 @@ router.post('/register',
         }
         //Create hashed password from original password
         const hashedPassword = await bcrypt.hash(password, 10);
-        //create nwe instance of user model with hashed password
+
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        //create new instance of user model with hashed password
         const newUser = new User({
             name,
             email,
             password: hashedPassword,
-            role: role || 'client'
-        })
+            role: role || 'client',
+            verificationToken,
+            verified: false
+        });
         await newUser.save(); //saving newUser in users collection
+        //creating verification link
+        const verificationLink = `http://localhost:3000/api/auth/verify-email?token=${verificationToken}`;
+        await sendEmail({
+            to: newUser.email,
+            subject: 'Verify your Email - IEC',
+            text: `Hello ${newUser.name}, please verify your email by clicking this link: ${verificationLink}`,
+            html: `<p>Hello ${newUser.name},</p>
+                       <p>Please verify your email by clicking the link below:</p>
+                       <a href="${verificationLink}">Verify Email</a>`
+        });
 
         const token = jwt.sign( //creating a token that will expire after 2hrs of being signed in
             {id: newUser.id, role: newUser.role},
@@ -57,6 +73,27 @@ router.post('/register',
         return res.status(500).json({message: 'Internal server error'});
     }
 });
+
+router.get('/verify-email', async (req, res) => {
+    const {token} = req.query
+
+    try {
+        const user = await User.findOne({verificationToken: token});
+
+        if (!user) {
+            return res.status(400).json({message: 'Invalid or expired verification token.'})
+        }
+        //Marking user as verified and clearing token
+        user.verified = true;
+        user.verificationToken = undefined;
+        await user.save();
+
+        res.status(200).json({message: 'Email verified successfully'});
+    } catch (error) {
+        console.error('Error during verification', error);
+        return res.status(500).json({message: 'Internal server error'});
+    }
+})
 //post route for login
 router.post('/login',
     [
@@ -77,6 +114,9 @@ router.post('/login',
         if (!isMatch) {
             console.log("Password does not match")
             return res.status(400).send({message: 'Invalid email or password'});
+        }
+        if (!user.verified) {
+            return res.status(403).json({message: 'Please verify your email before logging in'});
         }
          const token = jwt.sign( //creating a token that will expire after 2hrs of being signed in
              {id: user.id, role: user.role},

@@ -3,13 +3,10 @@ require('dotenv').config();
 
 // Connect to MongoDB
 const mongoose = require('mongoose');
-mongoose.connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-}).then(() => {
-    console.log("✅ MongoDB connected");
+mongoose.connect(process.env.MONGO_URI).then(() => {
+    console.log("MongoDB connected");
 }).catch(err => {
-    console.error("❌ MongoDB connection error:", err);
+    console.error("MongoDB connection error:", err);
 });
 
 const express = require('express');
@@ -24,6 +21,7 @@ const profileRouter = require('./routes/profile');
 const serviceRouter = require('./routes/services');
 const appointmentsRouter = require('./routes/appointments');
 const stylistRoutes = require('./routes/stylists');
+const setupReminderJob = require('./jobs/sendReminders');
 
 const app = express();
 
@@ -39,6 +37,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/services', serviceRouter);
 app.use('/api/appointments', appointmentsRouter);
-app.use('api/stylists', stylistRoutes);
+app.use('/api/stylists', stylistRoutes);
+setupReminderJob();
 
 module.exports = app;

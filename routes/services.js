@@ -5,11 +5,12 @@ const {body, validationResult } = require('express-validator');
 const Service = require('../models/service'); // Service model
 const {verifyToken, isAdmin} = require("../middleware/authMiddleware"); // Middleware to protect the route
 
-//Create a new service (only accessible with a valid token)
+//Create a new service
 router.post(
     '/',
     verifyToken,
     isAdmin,
+    //using express validator to ensure all fields satisfy requirements before adding service
     [
         body('name')
             .notEmpty()
@@ -42,8 +43,10 @@ router.post(
             res.status(500).json({ message: 'Server error while creating service' });
         }
     });
+//router to get all services
 router.get('/', async (req, res) => {
     try {
+        //finding and fetching services
         const services = await Service.find();
         res.status(200).json(services);
     }
@@ -52,10 +55,13 @@ router.get('/', async (req, res) => {
         res.status(500).json({ message: 'Server error while getting service' });
     }
 });
+
+//put router to update a service
 router.put(
     '/:id',
     verifyToken,
     isAdmin,
+    //using express validator to allow partial updates
     [
         body('name')
             .optional()
@@ -71,13 +77,15 @@ router.put(
             .withMessage('Price must be a positive number')
     ],async (req, res) => {
     try {
+        //pulling update fields from request body
         const {name, duration, price} = req.body;
-
+        //finding and updating service by ID
         const updatedService = await Service.findByIdAndUpdate(
             req.params.id,
             { name, duration, price },
             {new: true}
         );
+        //if service not found return 404 error
         if (!updatedService) {
             return res.status(404).json({ message: 'Service not found' });
         }

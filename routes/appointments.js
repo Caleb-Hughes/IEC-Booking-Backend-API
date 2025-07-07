@@ -2,16 +2,21 @@ const express = require('express');
 const {body, validationResult } = require('express-validator');
 const router = express.Router();
 const Appointment = require('../models/appointments');
+const User = require('../models/user');
+const Service = require('../models/service');
 const {verifyToken, isAdmin} = require('../middleware/authMiddleware');
+const sendEmail = require('../utils/sendEmail');
 
 
 //Route for creating appointments
 router.post(
-    '/', verifyToken,
+    '/',
+    verifyToken,
     [
         //Validation checks
         body('date').isISO8601().toDate().withMessage('Date is required and must be valid'),
         body('service').notEmpty().withMessage('Service is required'),
+        body('stylist').notEmpty().withMessage('Stylist ID is required')
     ],
     async (req, res) => {
         //Checking for validation errors
@@ -20,21 +25,108 @@ router.post(
             return res.status(400).json({errors: errors.array()});
         }
         try {
+            //pulling fields from request body
+            const {date, service, notes, stylist: stylistID} = req.body;
 
-            const {date, service, notes} = req.body;//Destructure fields from request body
+            //Finding Stylist by ID
+            const stylist = await User.findById(stylistID);
 
+            if (!stylist || stylist.role !== 'stylist') {
+                return res.status(404).json({message: 'Stylist not found'})
+            }
+            //Converting date string into date object for validation
+            const dateToCheck = new Date(date);
+
+            //Creating day name variable and date string (YYYY-MM-DD) for off-day checking
+            const dayName = dateToCheck.toLocaleDateString('en-US', {weekday: 'long'});
+            const dateString = dateToCheck.toISOString().slice(0,10);
+
+            //Making sure requested date isn't an off-day
+            if (stylist.offDays.includes(dayName) || stylist.offDays.includes(dateString)) {
+                return res.status(400).json({message: 'Stylist is off on this day'})
+            }
+            //Extracting hour and minute from requested appointment date
+            const appointmentHour = dateToCheck.getUTCHours();
+            const appointmentMinutes = dateToCheck.getUTCMinutes();
+
+            //storing stylist working hours in order to do comparison
+            const [startHour, startMin] = stylist.workingHours.start.split(':').map(Number);
+            const [endHour, endMin] = stylist.workingHours.end.split(':').map(Number);
+
+            //converting hours and minutes into total minutes since midnight
+            const appointmentTime = appointmentHour * 60 + appointmentMinutes;
+            const startTime = startHour * 60 + startMin;
+            const endTime = endHour * 60 + endMin;
+
+            //ensuring requested appointment time is within working hours
+            if (appointmentTime < startTime || appointmentTime >= endTime) {
+                return res.status(400).json({message: 'Appointment time is outside stylist working hours'});
+            }
+
+            //confirming service exist
+            const serviceDoc = await Service.findById(service);
+            if (!serviceDoc) {
+                return res.status(404).json({message: 'Service doesnt exist'})
+            }
+
+            //pulling duration of service from requested service
+            const durationMinutes = serviceDoc.duration;
+            //creating appointmentStart variable as requested start time
+            const appointmentStart = dateToCheck;
+            //converting end time to miliseconds to get the exact end time of the appointment
+            const appointmentEnd = new Date(appointmentStart.getTime() + durationMinutes * 60000);
+
+            //Checking to see if there is a pre-existing appointment at this time with the stylist
+            const conflict = await Appointment.findOne({
+                stylist: stylist._id,
+                status: {$in: ['accepted', 'pending']},
+                date: {$lt: appointmentEnd}, //ensuring conflict if existing appointment starts before the requested appointment ends
+                endDate: {$gt: appointmentStart} //ensuring conflict if existing appointment ends after the requested appointment start
+            });
+
+            if (conflict) {
+                return res.status(409).json({message: 'Time slot already booked'})
+            }
             //creating new appointment instance
             const newAppointment = new Appointment ({
                 user: req.user.id,
-                date,
+                date: dateToCheck,
                 service,
-                notes
+                stylist: stylistID,
+                notes,
+                duration: durationMinutes,
+                status: 'accepted',
+                endDate: appointmentEnd
             });
             await newAppointment.save(); //saving instance to database
+            //success message
             res.status(201).json({message: 'Appointment created', appointment: newAppointment});
+
+            const user = await User.findById(req.user.id);
+
+            //Fomratting appointment details
+            const appointmentDate = appointmentStart.toLocaleString('en-US', {timeZone: 'America/New_York'});
+            const serviceName = serviceDoc.name;
+
+            await sendEmail({
+                to: user.email,
+                subject: 'Appointment Confirmation',
+                text: `Hello ${user.name},
+
+Your appointment for ${serviceName} has been confirmed for ${appointmentDate} with ${stylist.name}.
+
+Thank you for booking with us!
+
+- Your Salon Team`,
+                html: `<p>Hello ${user.name},</p>
+<p>Your appointment for <strong>${serviceName}</strong> has been confirmed for <strong>${appointmentDate}</strong> with <strong>${stylist.name}</strong>.</p>
+<p>Thank you for booking with us!</p>
+<p>- Your Salon Team</p>`
+            });
+
         } catch (error) {
-            console.log(error);
-            res.status(500).json({message: 'Internal server error while creating appointment', error});
+            console.log('Error creating appointment:', error.message);
+            res.status(500).json({message: 'Internal server error while creating appointment', error: error.message});
         }
     });
 
@@ -113,7 +205,8 @@ router.put(
         }
     });
 //route to accept and deny appointments
-router.put('/id/status', verifyToken, async(req, res) => {
+/* (Decided to go with automatically accepting appointments but keeping just in case)
+router.put('/:id/status', verifyToken, async(req, res) => {
     const {status} = req.body; //pulling status from request body
 
     //Checking if status value is valid
@@ -153,7 +246,7 @@ router.put('/id/status', verifyToken, async(req, res) => {
         res.status(500).json({message: 'Server error while updating appointment'});
     }
 })
-
+*/
 router.delete('/:id', verifyToken, async (req, res) => {
     try {
         const appointment = await Appointment.findById(req.params.id);
@@ -167,8 +260,30 @@ router.delete('/:id', verifyToken, async (req, res) => {
         }
         await Appointment.findByIdAndDelete(req.params.id); //deleting appointment
         res.status(200).json({message: 'Appointment deleted successfully'});
+
+        const user = await User.findById(appointment.user);
+        const serviceDoc = await Service.findById(appointment.service);
+        const appointmentDate = appointment.date.toLocaleString('en-US', {timeZone: 'America/New_York'});
+        const stylist = await User.findById(appointment.stylist);
+
+        await sendEmail({
+            to: user.email,
+            subjectt: 'Appointment Cancellation',
+            text: `Hello ${user.name},
+
+Your appointment for ${serviceDoc.name} on ${appointmentDate} with ${stylist.name} has been cancelled.
+
+We hope to see you again soon.
+
+- Your Salon Team`,
+            html: `<p>Hello ${user.name},</p>
+<p>Your appointment for <strong>${serviceDoc.name}</strong> on <strong>${appointmentDate}</strong> with <strong>${stylist.name}</strong> has been cancelled.</p>
+<p>We hope to see you again soon.</p>
+<p>- Your Salon Team</p>`
+        });
     } catch (error) {
         res.status(500).json({message: 'Server error while deleting appointment'});
     }
 });
+
 module.exports = router; //exporting router
