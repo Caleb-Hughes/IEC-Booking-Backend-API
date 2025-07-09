@@ -7,6 +7,7 @@ const User = require('../models/user');
 const {verifyToken} = require('../middleware/authMiddleware');
 const crypto = require('crypto');
 const sendEmail = require('../utils/sendEmail');
+const passport = require('passport');
 
 
 //post route for registration
@@ -30,9 +31,9 @@ router.post('/register',
         }
         //Create hashed password from original password
         const hashedPassword = await bcrypt.hash(password, 10);
-
+        //creating unique verification Token for email verification
         const verificationToken = crypto.randomBytes(32).toString('hex');
-        //create new instance of user model with hashed password
+        //create new instance of user model with hashed password and verified as false to ensure email verification
         const newUser = new User({
             name,
             email,
@@ -41,9 +42,10 @@ router.post('/register',
             verificationToken,
             verified: false
         });
-        await newUser.save(); //saving newUser in users collection
-        //creating verification link
+        await newUser.save(); //saving new User in users collection/database
+        //creating verification link, once clicked user will be marked as verified
         const verificationLink = `http://localhost:3000/api/auth/verify-email?token=${verificationToken}`;
+        //sending email with verification link
         await sendEmail({
             to: newUser.email,
             subject: 'Verify your Email - IEC',
@@ -137,11 +139,21 @@ router.post('/login',
         res.status(500).json({message: 'Internal server error'});
     }
 });
-
 router.get('/profile', verifyToken, (req, res) => {
     res.status(200).json({
         message: 'Successfully logged in',
         user: req.user
     });
 });
+//route to start Google OAuth login process
+router.get('/google',
+    passport.authenticate('google', {scope: ['profile', 'email']})
+);
+//router to handle callback once user logged in
+router.get('/google/callback',
+    passport.authenticate('google', {failureRedirect: '/login'}),
+    (req, res) => {
+    res.redirect('/dashboard');
+    }
+);
 module.exports = router;

@@ -73,7 +73,7 @@ router.post(
             const durationMinutes = serviceDoc.duration;
             //creating appointmentStart variable as requested start time
             const appointmentStart = dateToCheck;
-            //converting end time to miliseconds to get the exact end time of the appointment
+            //converting end time to milliseconds to get the exact end time of the appointment
             const appointmentEnd = new Date(appointmentStart.getTime() + durationMinutes * 60000);
 
             //Checking to see if there is a pre-existing appointment at this time with the stylist
@@ -104,10 +104,10 @@ router.post(
 
             const user = await User.findById(req.user.id);
 
-            //Fomratting appointment details
+            //Formatting appointment details
             const appointmentDate = appointmentStart.toLocaleString('en-US', {timeZone: 'America/New_York'});
             const serviceName = serviceDoc.name;
-
+            //Sending booking confirmation email
             await sendEmail({
                 to: user.email,
                 subject: 'Appointment Confirmation',
@@ -265,10 +265,10 @@ router.delete('/:id', verifyToken, async (req, res) => {
         const serviceDoc = await Service.findById(appointment.service);
         const appointmentDate = appointment.date.toLocaleString('en-US', {timeZone: 'America/New_York'});
         const stylist = await User.findById(appointment.stylist);
-
+        //sending email confirming cancellation
         await sendEmail({
             to: user.email,
-            subjectt: 'Appointment Cancellation',
+            subject: 'Appointment Cancellation',
             text: `Hello ${user.name},
 
 Your appointment for ${serviceDoc.name} on ${appointmentDate} with ${stylist.name} has been cancelled.
