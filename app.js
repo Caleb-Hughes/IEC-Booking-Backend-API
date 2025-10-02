@@ -1,13 +1,4 @@
-// Load environment variables from .env
 require('dotenv').config();
-
-// Connect to MongoDB
-const mongoose = require('mongoose');
-mongoose.connect(process.env.MONGO_URI).then(() => {
-    console.log("MongoDB connected");
-}).catch(err => {
-    console.error("MongoDB connection error:", err);
-});
 
 const express = require('express');
 const path = require('path');
@@ -16,8 +7,63 @@ const cors = require('cors');
 const logger = require('morgan');
 const session = require('express-session');
 const passport = require('passport');
+const mongoose = require('mongoose');
+
 require('./config/passport');
 
+// MongoDb 
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('MongoDB connected'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
+const app = express();
+
+
+app.set('trust proxy', 1);
+
+// ----- CORS -----
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'https://iec-frontend-nine.vercel.app/'  
+];
+
+app.use(cors({
+  origin(origin, cb) {
+    // allow tools like curl/postman (no origin) and whitelisted sites
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    cb(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization']
+}));
+
+//handle preflight explicitly
+app.options('*', cors());
+
+//Parsers & logging 
+app.use(logger('dev'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
+
+// ----- Session (if you use it) -----
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'dev-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    sameSite: 'none',   // cross-site 
+    secure: true        
+  }
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Routes
 const indexRouter = require('./routes/index');
 const usersRouter = require('./routes/users');
 const authRouter = require('./routes/auth');
@@ -25,36 +71,20 @@ const profileRouter = require('./routes/profile');
 const serviceRouter = require('./routes/services');
 const appointmentsRouter = require('./routes/appointments');
 const stylistRoutes = require('./routes/stylists');
-const setupReminderJob = require('./jobs/sendReminders');
-
-const app = express();
-
-app.use(session({
-    secret: process.env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-}));
-
-app.use(logger('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
-app.use(cors({
-    origin: ['http://localhost:5173'],
-    credentials: true
-}));
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(passport.initialize());
-app.use(passport.session());
 
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
+
 app.use('/api/auth', authRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/services', serviceRouter);
 app.use('/api/appointments', appointmentsRouter);
 app.use('/api/stylists', stylistRoutes);
-setupReminderJob();
 
+// Health check for Render
+app.get('/health', (req, res) => res.send('ok'));
+
+const setupReminderJob = require('./jobs/sendReminders');
+setupReminderJob();
 
 module.exports = app;
