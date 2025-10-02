@@ -10,7 +10,7 @@ const userSchema = new mongoose.Schema ({
     services: [{type: mongoose.Schema.Types.ObjectId, ref: 'Service'}],
     workingHours: {
         start: {type: String, default:'9:00'}, //ensuring time is string type and default at 9:00
-        end: {type: String, default:'8:00'},
+        end: {type: String, default:'20:00'},
     },
     offDays: {type: [String], default: []
     },

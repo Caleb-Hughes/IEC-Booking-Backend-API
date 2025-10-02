@@ -104,8 +104,9 @@ router.post('/login',
     ],
     async (req, res) => {
     try {
-        const {email, password} = req.body; //pulling variables from request body
-
+         //pulling variables from request body
+        const email = String(req.body.email || '').trim().toLowerCase();
+        const password = Strng(req.body.password || '');
         const user = await User.findOne({email}); //looking for user with matching email
         //if email not found return error message
         if (!user) {
@@ -125,10 +126,17 @@ router.post('/login',
              process.env.JWT_SECRET,
              {expiresIn: '2h'}
          );
-        res.status(200).json({
+        //Settin HttpOnly Cookie
+        res.cookie('token', token, {
+            httpOnly: true,
+            sameSite: process.env.COOKIE_SAMESITE || 'lax',
+            secure: process.env.COOKIE_SAMESITE==='none' ? true : (process.env.NODE_ENV ==='production'),
+            maxAge: 1000 * 60 * 60 * 2
+            })
+        .status(200).json({
             message: 'Successfully logged in',
-            token,
             user: {
+                id: user.id,
                 name: user.name,
                 email: user.email,
                 role: user.role
@@ -153,7 +161,24 @@ router.get('/google',
 router.get('/google/callback',
     passport.authenticate('google', {failureRedirect: '/login'}),
     (req, res) => {
-    res.redirect('/dashboard');
-    }
+    const token = jwt.sign(
+
+        {id: req.user.id, role: req.user.role },
+        process.env.JWT_SECRET,
+        {expiresIn: '2hr'}
+    );
+    res.cookie('token', token, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 1000 * 60 * 60 * 2
+    });
+    res.redirect(process.env.CLIENT_URL + '/oauth-success');
+  }
 );
+//Router to return user ('who am i' router)
+router.get('/me', verifyToken, async (req, res) => {
+    res.json({user: req.user});
+});
+
 module.exports = router;

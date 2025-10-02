@@ -5,6 +5,22 @@ const Service = require('../models/service');
 const Appointment = require('../models/appointments');
 const {verifyToken, isAdmin} = require('../middleware/authMiddleware');
 
+//Get router to fetch all stylists
+router.get('/', async (req, res) => {
+    try {
+        const {serviceId} = req.query;
+        const filter = {role: 'stylist'};
+        if (serviceId) {
+            filter.services = serviceId;
+        }
+        const stylists = await User.find(filter).select('-password'); //ensures password field isn't returned
+        res.status(200).json(stylists);
+    } catch (error) { //error handler for unexpected errors
+        console.error(error);
+        res.status(500).json({message: 'Error fetching stylists'});
+    }
+});
+
 //Post router to assign services to stylist
 router.post('/:id/services', verifyToken, isAdmin, async (req, res) => {
     try {
@@ -91,21 +107,21 @@ router.get('/:id/available-slots', async (req, res) => {
             return res.status(404).json({message: 'Stylist not found'});
         }
         //unpacking date query parameter from request
-        const {date} = req.query;
+        const {date, sereviceID} = req.query;
         //if date not found return error
         if (!date) {
             return res.status(400).json({message: 'Date not found'});
         }
         //creating object for requested date
-        const dateToCheck = new Date(date);
+        const dateToCheck = new Date(`${date}T00:00:00`);
 
         //validating date is valid
-        if (isNaN(dateToCheck.getTime())) {
+        if (isNaN(+dateToCheck.getTime())) {
             return res.status(400).json({message: 'Invalid date format'});
         }
         //Getting day name and date string("YYYY-MM-DD")
         const dayName = dateToCheck.toLocaleDateString('en-US', {weekday: 'long'});
-        const dateString = dateToCheck.toISOString().slice(0,10);
+        const dateString = date;
 
         //Ensuring requested day isn't an off day
         if (stylist.offDays.includes(dayName) || stylist.offDays.includes(dateString)) {
@@ -119,10 +135,10 @@ router.get('/:id/available-slots', async (req, res) => {
             let [startHour, startMin] = start.split(':').map(Number);
             let [endHour, endMin] = end.split(':').map(Number);
             //creating current time object starting at workingHours.start
-            let current = new Date(date);
+            const current = new Date(`${date}T00:00:00`)
             current.setHours(startHour, startMin, 0, 0);
             //creating end time object at workingHours.end
-            const endTime = new Date(date);
+            const endTime = new Date(`${date}T00:00:00`);
             endTime.setHours(endHour, endMin, 0, 0);
 
             //creating while loop to generate slots adding 'interval' minutes each loop until endTime
