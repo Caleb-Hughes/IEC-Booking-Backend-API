@@ -9,7 +9,7 @@ function getToken(req) {
     return cookieToken || bearerToken;
 }
 function verifyToken(req, res, next) {
-    const Token = getToken(req);
+    const token = getToken(req);
     if (!token) {
         return res.status(401).json({message: 'Unauthroized: No token provided'});
     }

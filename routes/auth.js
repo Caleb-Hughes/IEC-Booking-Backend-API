@@ -106,7 +106,7 @@ router.post('/login',
     try {
          //pulling variables from request body
         const email = String(req.body.email || '').trim().toLowerCase();
-        const password = Strng(req.body.password || '');
+        const password = String(req.body.password || '');
         const user = await User.findOne({email}); //looking for user with matching email
         //if email not found return error message
         if (!user) {
@@ -165,7 +165,7 @@ router.get('/google/callback',
 
         {id: req.user.id, role: req.user.role },
         process.env.JWT_SECRET,
-        {expiresIn: '2hr'}
+        {expiresIn: '2h'}
     );
     res.cookie('token', token, {
         httpOnly: true,
@@ -181,4 +181,13 @@ router.get('/me', verifyToken, async (req, res) => {
     res.json({user: req.user});
 });
 
+//Route for logout
+router.post('/logout', (req, res) => {
+    res.clearCookie('token', {
+        httpOnly: true,
+        sameSite: process.env.COOKIE_SAMESITE || 'lax',
+        secure: process.env.COOKIE_SAMESITE === 'none' ? true : (process.env.NODE_ENV === 'production')
+    });
+    res.status(200).json({ message: 'Logged out successfully' });
+});
 module.exports = router;
