@@ -7,6 +7,7 @@
     "dev": "nodemon ./bin/www"
   },
   "dependencies": {
+    "@prisma/client": "^7.3.0",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "~1.4.4",
     "cors": "^2.8.5",
@@ -23,6 +24,7 @@
     "nodemailer": "^7.0.4",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
+    "prisma": "^7.3.0",
     "react-day-picker": "^9.11.0"
   },
   "devDependencies": {

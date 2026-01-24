@@ -1,0 +1,89 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  client
+  stylist
+  admin
+}
+
+enum AppointmentStatus {
+  pending
+  accepted
+  declined
+}
+
+model User {
+  id       String  @id @default(uuid())
+  name     String
+  email    String  @unique
+  password String?
+  role     Role    @default(client)
+
+  googleId         String? @unique
+  verified         Boolean @default(false)
+  verficationToken String?
+
+  //Working Hours + Off days
+  workingStart String   @default("9:00")
+  workingEnd   String   @default("20:00")
+  offDays      String[] @default([])
+
+  //Many-to-many rltnshp for stylists and services
+  services Service[] @relation("UserServices")
+
+  //Appointments
+  clientAppointments  Appointment[] @relation("ClientAppointments")
+  stylistAppointments Appointment[] @relation("StylistAppointments")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Service {
+  id       String @id @default(uuid())
+  name     String
+  duration Int? //min
+  price    Float
+  category String @default("Other")
+
+  stylists User[] @relation("UserServices")
+
+  appointments Appointment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+}
+
+model Appointment {
+  id String @id @default(uuid())
+
+  clientId String
+  client   User   @relation("ClientAppointments", fields: [clientId], references: [id])
+
+  serviceId String
+  service   Service @relation(fields: [serviceId], references: [id])
+
+  stylistId String
+  stylist   User   @relation("StylistAppointments", fields: [stylistId], references: [id])
+
+  date    DateTime
+  endDate DateTime
+
+  duration Int               @default(60)
+  notes    String?
+  status   AppointmentStatus @default(accepted)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([stylistId, date, endDate])
+  @@index([clientId, date])
+}
