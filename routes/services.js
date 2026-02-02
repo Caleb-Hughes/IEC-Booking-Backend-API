@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const {body, validationResult } = require('express-validator');
-const Service = require('../models/service'); // Service model
+const prisma = require('../db/prisma'); // Service model
 const {verifyToken, isAdmin} = require("../middleware/authMiddleware"); // Middleware to protect the route
 
 //Create a new service
@@ -32,9 +32,13 @@ router.post(
             const { name, duration, price } = req.body;
 
             // Create new service document and save it to the database
-            const newService = new Service({ name, duration, price });
-            await newService.save();
-
+            const newService = await prisma.service.create({
+                data: {
+                    name,
+                    duration: Number(duration),
+                    price: Number(price),
+                },
+            });
             // Respond with success message and created service
             res.status(201).json({ message: 'Service created successfully', service: newService });
 
@@ -47,8 +51,10 @@ router.post(
 router.get('/', async (req, res) => {
     try {
         //finding and fetching services
-        const services = await Service.find();
-        res.status(200).json(services);
+       const services = await prisma.service.findMany({
+        orderBy: {name: "asc"},
+       });
+       res.status(200).json(services);
     }
     catch (error) {
         console.error(error);
@@ -76,35 +82,51 @@ router.put(
             .isFloat({gt: 0})
             .withMessage('Price must be a positive number')
     ],async (req, res) => {
-    try {
-        //pulling update fields from request body
-        const {name, duration, price} = req.body;
-        //finding and updating service by ID
-        const updatedService = await Service.findByIdAndUpdate(
-            req.params.id,
-            { name, duration, price },
-            {new: true}
-        );
-        //if service not found return 404 error
-        if (!updatedService) {
-            return res.status(404).json({ message: 'Service not found' });
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({errors: errors.array()});
         }
-        res.status(200).json({ message: 'Service updated successfully', service: updatedService });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Server error while updating service' });
-    }
+
+        try {
+            //pulling update fields from request body
+            const serviceId = req.params.id;
+            const {name, duration, price} = req.body;
+            //finding and updating service by ID
+            const updatedService = await prisma.service.update({
+                where: {id: serviceId},
+                data: {
+                    ...(name !== undefined ? {name} : {}),
+                    ...(duration !== undefined ? {duration: Number(duration)} : {}),
+                    ...(price !== undefined ? {price: Number(price)} : {}),
+
+                },
+            });
+        } catch (error) {
+            //if service not found return 404 error
+            if (error.code === "P2025") {
+                return res.status(404).json({ message: 'Service not found' });
+            }  
+            console.error(error);          
+            res.status(500).json({ message: 'Server error while updating service' });
+        }
 });
 
 
 router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
     try {
-        const deletedService = await Service.findByIdAndDelete(req.params.id);
-        if (!deletedService) {
-            return res.status(404).json({message: 'Service not found'});
-        }
+        const serviceId = req.params.id;
+
+        await prisma.service.delete({
+            where: {id: serviceId},
+        });
+
         res.status(200).json({message:'Service deleted successfully'});
+        
     } catch (error) {
+        if (error.code === "P2025") {
+            return res.status(404).json({message: "Service not found"})
+        }
+        console.error(error)
         res.status(500).json({ message: 'Server error while deleting service' });
     }
 });

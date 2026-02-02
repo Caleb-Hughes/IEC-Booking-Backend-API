@@ -1,54 +1,69 @@
-const cron = require('node-cron');
-const Appointment = require('../models/appointments');
-const User = require('../models/user');
-const Service = require('../models/service');
-const sendEmail = require('../utils/sendEmail');
+const cron = require("node-cron");
+const prisma = require("../db/prisma");
+const sendEmail = require("../utils/sendEmail");
 
+const SALON_TZ = "America/New_York";
+
+// Runs every hour at minute 0
 function setupReminderJob() {
-    cron.schedule('0 * * * *', async () => {
-        console.log('running reminder job');
+  cron.schedule("0 * * * *", async () => {
+    console.log("running reminder job");
 
-        try {
-            const now = new Date();
-            const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-            const nextDayEnd = new Date(now.getTime() + 60 * 60 * 1000);
+    try {
+      const now = new Date();
+      const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
 
-            const appointments = await Appointment.find({
-                date: {$gte: nextDay, $lt: nextDayEnd},
-                status: {$in: ['accepted', 'pending']}
-            });
+      // Pull upcoming appts in the next hour
+      const appointments = await prisma.appointment.findMany({
+        where: {
+          status: { in: ["accepted", "pending"] },
+          date: { gte: now, lt: oneHourFromNow },
+        },
+        include: {
+          client: { select: { name: true, email: true } },
+          service: { select: { name: true } },
+          stylist: { select: { name: true } },
+        },
+        orderBy: { date: "asc" },
+      });
 
-            console.log(`Found ${appointments.length} appointments for reminders`);
+      console.log(`Found ${appointments.length} appointments for reminders`);
 
-            for (const appointment of appointments) {
-                const user = await User.findbyId(appointment.user);
-                const service = await Service.findById(appointment.service);
-                const appointmentDate = appointment.date.toLocateString('en-US', {timeZone: 'America/New_York'});
+      for (const appt of appointments) {
+        const clientEmail = appt.client?.email;
+        const clientName = appt.client?.name;
+        const serviceName = appt.service?.name;
 
-                if (!user || !service) continue;
+        if (!clientEmail || !clientName || !serviceName) continue;
 
-                await sendEmail({
-                    to: user.email,
-                    subject: 'Appointment Reminder',
-                    text: `Hello ${user.name},
+        const appointmentDate = appt.date.toLocaleString("en-US", {
+          timeZone: SALON_TZ,
+        });
 
-This is a reminder for your ${service.name} appointment on ${appointmentDate}.
+        await sendEmail({
+          to: clientEmail,
+          subject: "Appointment Reminder",
+          text: `Hello ${clientName},
+
+This is a reminder for your ${serviceName} appointment on ${appointmentDate}${appt.stylist?.name ? ` with ${appt.stylist.name}` : ""}.
 
 We look forward to seeing you!
 
 - Your Salon Team`,
-                    html: `<p>Hello ${user.name},</p>
-<p>This is a reminder for your <strong>${service.name}</strong> appointment on <strong>${appointmentDate}</strong>.</p>
+          html: `<p>Hello ${clientName},</p>
+<p>This is a reminder for your <strong>${serviceName}</strong> appointment on <strong>${appointmentDate}</strong>${
+            appt.stylist?.name ? ` with <strong>${appt.stylist.name}</strong>` : ""
+          }.</p>
 <p>We look forward to seeing you!</p>
-<p>- Your Salon Team</p>`
-                });
+<p>- Your Salon Team</p>`,
+        });
 
-                console.log(`Reminder sent to ${user.email}`);
-            }
-        } catch (error) {
-            console.error('Error in reminder job:', error);
-        }
-    });
+        console.log(`Reminder sent to ${clientEmail}`);
+      }
+    } catch (error) {
+      console.error("Error in reminder job:", error);
+    }
+  });
 }
 
 module.exports = setupReminderJob;

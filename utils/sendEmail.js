@@ -1,6 +1,10 @@
 const nodemailer = require('nodemailer');
 
 //Using nodemailer to create transporter object to send emails using Gmail
+console.log("GMAIL_USER runtime =", JSON.stringify(process.env.GMAIL_USER));
+console.log("GMAIL_PASS length =", (process.env.GMAIL_PASS || "").length);
+console.log("GMAIL_PASS preview =", JSON.stringify((process.env.GMAIL_PASS || "").slice(0,4) + "..." + (process.env.GMAIL_PASS || "").slice(-4)));
+
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -11,7 +15,7 @@ const transporter = nodemailer.createTransport({
 //creating async function to send emails
 async function sendEmail(options) {
     const mailOptions = {
-        from: `"Salon Booking" <${process.env.GMAIL_USERNAME}>`,
+        from: `"Salon Booking" <${process.env.GMAIL_USER}>`,
         to: options.to,
         subject: options.subject,
         text: options.text,
@@ -22,7 +26,8 @@ async function sendEmail(options) {
         const info = await transporter.sendMail(mailOptions);
         console.log('Email sent successfully', info.response);
     } catch (err) { //error handler
-        console.log(err);
+        console.error("sendEmail Failed:", err);
+        throw err
     }
 }
 

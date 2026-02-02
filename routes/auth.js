@@ -3,14 +3,30 @@ const router = express.Router(); //Initializing router
 const bcrypt = require('bcryptjs'); //Importing bcrypt for hashing passwords
 const jwt = require('jsonwebtoken'); // Importing jwt for token creation
 const {body, validationResult} = require('express-validator');
-const User = require('../models/user');
+const prisma = require("../db/prisma")
 const {verifyToken} = require('../middleware/authMiddleware');
 const crypto = require('crypto');
 const sendEmail = require('../utils/sendEmail');
 const passport = require('passport');
 
+//Helpers
+function signToken(user) {
+    return jwt.sign(
+        {id: user.id, role: user.role},
+        process.env.JWT_SECRET,
+        {expiresIn: "2h"}
+    );
+}
 
-//post route for registration
+function setAuthCookie(res, token) {
+    res.cookie("token", token, {
+        httpOnly: true,
+        sameSite: process.env.COOKIE_SAMESITE || "lax",
+        secure: process.env.COOKIE_SAMESITE == "none" ? true: process.env.NODE_ENV === "production",
+        maxAge: 1000 * 60 * 60 * 2,
+    });
+}
+//post router for registration
 router.post('/register',
     [
         body('name').notEmpty().withMessage('Name is required'),
@@ -23,8 +39,11 @@ router.post('/register',
         return res.status(400).json({errors: errors.array()});
     }
     try {
-        const {name, email, password, role} = req.body; // pulling variables from request body
-        const existingUser = await User.findOne({email}); //checking for existing user with matching email
+        const name = String(req.body.name || "").trim();
+        const email = String(req.body.email || "").trim().toLowerCase();
+        const password = String(req.body.password || "");
+
+        const existingUser = await prisma.user.findUnique({where: {email}}); //checking for existing user with matching email
         if (existingUser) { //If user already registered send error message
             console.log("Email already in database");
             return res.status(400).send({message: 'Email already in use'});
@@ -34,17 +53,21 @@ router.post('/register',
         //creating unique verification Token for email verification
         const verificationToken = crypto.randomBytes(32).toString('hex');
         //create new instance of user model with hashed password and verified as false to ensure email verification
-        const newUser = new User({
-            name,
-            email,
-            password: hashedPassword,
-            role: role || 'client',
-            verificationToken,
-            verified: false
+        const newUser = await prisma.user.create({
+            data: {
+                name,
+                email,
+                password: hashedPassword,
+                role: "client",
+                verified: false,
+                verificationToken: verificationToken
+            },
+            select: {id: true, name: true, email: true, role: true}
         });
-        await newUser.save(); //saving new User in users collection/database
+
+        const baseUrl = process.env.API_BASE_URL || "http://localhost:3000";
         //creating verification link, once clicked user will be marked as verified
-        const verificationLink = `http://localhost:3000/api/auth/verify-email?token=${verificationToken}`;
+        const verificationLink = `${baseUrl}/api/auth/verify-email?token=${verificationToken}`;
         //sending email with verification link
         await sendEmail({
             to: newUser.email,
@@ -55,40 +78,46 @@ router.post('/register',
                        <a href="${verificationLink}">Verify Email</a>`
         });
 
-        const token = jwt.sign( //creating a token that will expire after 2hrs of being signed in
-            {id: newUser.id, role: newUser.role},
-            process.env.JWT_SECRET,
-            {expiresIn: '2h'}
-        );
+        const token = signToken(newUser);
+        setAuthCookie(res, token);
 
         console.log("Successful registration")
         return res.status(201).json({message: 'User registered successfully',
-        token: token,
-        user: {
-            name: newUser.name,
-            email: newUser.email,
-            role: newUser.role
-        }
+            user: {
+                id: newUser.id,
+                name: newUser.name,
+                email: newUser.email,
+                role: newUser.role
+            }
         });
     } catch (error) {
-        console.log(error);
-        return res.status(500).json({message: 'Internal server error'});
+        console.error("Register error:", error);
+        const msg = error?.message || "Internal server error";
+            
+        return res.status(500).json({message: msg})
     }
 });
 
 router.get('/verify-email', async (req, res) => {
-    const {token} = req.query
+    const token = String(req.query.token || "");
 
     try {
-        const user = await User.findOne({verificationToken: token});
+        const user = await prisma.user.findUnique({
+            where: {verificationToken: token},
+            select: {id: true}
+        });
 
         if (!user) {
             return res.status(400).json({message: 'Invalid or expired verification token.'})
         }
         //Marking user as verified and clearing token
-        user.verified = true;
-        user.verificationToken = undefined;
-        await user.save();
+        await prisma.user.update({
+            where: {id: user.id},
+            data: {
+                verified: true,
+                verificationToken: null, //clearing token
+            }
+        })
 
         res.status(200).json({message: 'Email verified successfully'});
     } catch (error) {
@@ -105,13 +134,16 @@ router.post('/login',
     async (req, res) => {
     try {
          //pulling variables from request body
-        const email = String(req.body.email || '').trim().toLowerCase();
-        const password = String(req.body.password || '');
-        const user = await User.findOne({email}); //looking for user with matching email
+        const email = String(req.body.email || "").trim().toLowerCase();
+        const password = String(req.body.password || "");
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+        const user = await prisma.user.findUnique({where: {email}}); //looking for user with matching email
         //if email not found return error message
-        if (!user) {
+        if (!user || !user.password) {
             console.log("Email not found")
-            return res.status(400).send({message: 'Invalid email or password'});
+            return res.status(400).send({message: 'Invalid Email or password'});
         }
         const isMatch = await bcrypt.compare(password, user.password); //checking to see if hashed password and entered password match
         if (!isMatch) {
@@ -121,19 +153,10 @@ router.post('/login',
         if (!user.verified) {
             return res.status(403).json({message: 'Please verify your email before logging in'});
         }
-         const token = jwt.sign( //creating a token that will expire after 2hrs of being signed in
-             {id: user.id, role: user.role},
-             process.env.JWT_SECRET,
-             {expiresIn: '2h'}
-         );
-        //Settin HttpOnly Cookie
-        res.cookie('token', token, {
-            httpOnly: true,
-            sameSite: process.env.COOKIE_SAMESITE || 'lax',
-            secure: process.env.COOKIE_SAMESITE==='none' ? true : (process.env.NODE_ENV ==='production'),
-            maxAge: 1000 * 60 * 60 * 2
-            })
-        .status(200).json({
+        const token = signToken(user);
+        setAuthCookie(res, token)
+         
+        res.status(200).json({
             message: 'Successfully logged in',
             user: {
                 id: user.id,
@@ -167,12 +190,8 @@ router.get('/google/callback',
         process.env.JWT_SECRET,
         {expiresIn: '2h'}
     );
-    res.cookie('token', token, {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 1000 * 60 * 60 * 2
-    });
+    
+    setAuthCookie(res, token);
     res.redirect(process.env.CLIENT_URL + '/oauth-success');
   }
 );

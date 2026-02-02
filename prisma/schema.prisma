@@ -1,5 +1,6 @@
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 generator client {
@@ -27,10 +28,10 @@ model User {
 
   googleId         String? @unique
   verified         Boolean @default(false)
-  verficationToken String?
+  verificationToken String? @unique
 
   //Working Hours + Off days
-  workingStart String   @default("9:00")
+  workingStart String   @default("09:00")
   workingEnd   String   @default("20:00")
   offDays      String[] @default([])
 

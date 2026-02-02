@@ -1,7 +1,6 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-const User = require('../models/user');
-
+const prisma = require("../db/prisma")
 //Configuring Google strategy for passport
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
@@ -12,27 +11,48 @@ passport.use(new GoogleStrategy({
     async(accessToken, refreshToken, profile, done) => {
     try {
         //extracting email from Google profil
-        const email = profile.emails[0].value;
-        //checking to see if user exists in database
-        const existingUser = await User.findOne({email});
+        const email = String(profile?.emails?.[0]?.value || "").trim().toLowerCase();
 
+        if (!email) {
+            return done(new Error("Google account has no email"), null);
+        }
+
+        //Try to find User by googleID
+        const googleId = String(profile.id);
+
+        let user = await prisma.user.findFirst({
+            where: {
+                OR: [{googleId}, {email}]
+            }
+        });
+    
         //If existing user, complete login and attach user to session
-        if (existingUser) {
-            return done(null, existingUser);
+        if (user && !user.googleId) {
+            user = await prisma.user.update({
+                where: {id: user.id},
+                data: {
+                    googleId,
+                    verified: true,
+                    verificationToken: null,
+                },
+            });
         }
         //If user doesn't exist create a new user with Google information
-        const newUser = new User({
-            name: profile.displayName, //pulling name
-            email, //pulling email
-            password: null, //no password since google Oauth
-            role: 'client', //Defaulting role as client
-            verified: true, //no need for verification since using google Oauth
-        });
+        if (!user) {
+            user = await prisma.user.create({
+                data: {
+                    name: profile.displayName || "Google User",
+                    email,
+                    password: null,
+                    role: "client",
+                    verified: true,
+                    verificationToken: null,
+                    googleId,
+                }
+            });
+        }
         //saving new user to database
-        await newUser.save();
-
-        //completing login
-        done(null, newUser);
+        return done(null, user);
     } catch (error) { //passing errors through passport for handling
         done(error, null)
 
@@ -46,8 +66,10 @@ passport.serializeUser((user, done) => {
 //Deserialize user from session using storied ID and fetching user from database
 passport.deserializeUser(async (id, done) => {
     try {
-        const user = await User.findById(id);
-        done(null, user);
+        const user = await prisma.user.findUnique({
+            where: {id: String(id)}
+        });
+        done(null, user || null);
     } catch (error) {
         done(error, null);
     }

@@ -7,14 +7,10 @@ const cors = require('cors');
 const logger = require('morgan');
 const session = require('express-session');
 const passport = require('passport');
-const mongoose = require('mongoose');
+const isProd = process.env.NODE_ENV === 'production';
 
 require('./config/passport');
 
-// MongoDb 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error:', err));
 
 const app = express();
 
@@ -24,7 +20,7 @@ app.set('trust proxy', 1);
 // ----- CORS -----
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
-  'https://iec-frontend-nine.vercel.app/'  
+  'https://iec-frontend-nine.vercel.app'  
 ];
 
 app.use(cors({
@@ -53,7 +49,7 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    sameSite: 'none',   // cross-site 
+    sameSite: isProd ? "none" : "lax",  // cross-site 
     secure: true        
   }
 }));
@@ -73,8 +69,7 @@ const appointmentsRouter = require('./routes/appointments');
 const stylistRoutes = require('./routes/stylists');
 
 app.use('/', indexRouter);
-app.use('/users', usersRouter);
-
+app.use('/api/users', usersRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/services', serviceRouter);
