@@ -3,7 +3,7 @@ It manages users, stylists, services, and appointments with a secure Express/Mon
 
  **Tech Stack**
 - **Node.js + Express**
-- **MongoDB + Mongoose**
+- **PostgreSql + Prisma ORM**
 - **JWT + bcrypt** (authentication)
 - **CORS, dotenv, nodemon**
 
